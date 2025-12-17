@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String?   @unique
+  phone        String?   @unique
+  username     String    @unique
+  passwordHash String?
+  isVerified   Boolean   @default(false)
+  provider     String?   // google, apple, email
+  providerId   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  profile      Profile?
+  sessions     Session[]
+  blogs        Blog[]
+  threads      Thread[]
+  replies      Reply[]
+  likes        Like[]
+  votes        Vote[]
+  comments     Comment[]
+  follows      Follow[]  @relation("UserFollows")
+  followers    Follow[]  @relation("UserFollowers")
+  sentMessages     Message[] @relation("Sent")
+  receivedMessages Message[] @relation("Received")
+  notifications    Notification[]
+  reports          Report[]
+  forumMods        Forum[]   @relation("ForumMods")
+
+  @@map("users")
+}
+
+model Profile {
+  id        String  @id @default(uuid())
+  userId    String  @unique
+  bio       String?
+  photoUrl  String?
+  isPrivate Boolean @default(false)
+  bannerUrl String?
+  location  String?
+  website   String?
+  user      User    @relation(fields: [userId], references: [id])
+
+  @@map("profiles")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  device    String?
+  ip        String?
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("sessions")
+}
+
+model Blog {
+  id          String     @id @default(uuid())
+  authorId    String
+  title       String
+  content     String     // JSON or HTML
+  status      BlogStatus @default(DRAFT)
+  slug        String     @unique
+  metaTitle   String?
+  metaDesc    String?
+  coverImage  String?
+  publishedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id])
+  comments Comment[]
+
+  @@map("blogs")
+}
+
+model Like {
+  id          String    @id @default(uuid())
+  userId      String
+  contentType String    // BLOG, THREAD, REPLY
+  contentId   String
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, contentType, contentId])
+  @@map("likes")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  blogId    String
+  authorId  String
+  content   String
+  parentId  String?  // for nested comments
+  createdAt DateTime @default(now())
+
+  blog     Blog      @relation(fields: [blogId], references: [id])
+  author   User      @relation(fields: [authorId], references: [id])
+  parent   Comment?  @relation("CommentTree", fields: [parentId], references: [id])
+  children Comment[] @relation("CommentTree")
+
+  @@map("comments")
+}
+
+model Forum {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  rules       String?
+  creatorId   String
+  createdAt   DateTime @default(now())
+
+  moderators User[]   @relation("ForumMods")
+  threads    Thread[]
+
+  @@map("forums")
+}
+
+model Thread {
+  id        String   @id @default(uuid())
+  forumId   String
+  authorId  String
+  title     String
+  content   String
+  upvotes   Int      @default(0)
+  downvotes Int      @default(0)
+  createdAt DateTime @default(now())
+
+  forum   Forum   @relation(fields: [forumId], references: [id])
+  author  User    @relation(fields: [authorId], references: [id])
+  replies Reply[]
+
+  @@map("threads")
+}
+
+model Reply {
+  id        String   @id @default(uuid())
+  threadId  String
+  authorId  String
+  content   String
+  parentId  String?  // for nested replies
+  upvotes   Int      @default(0)
+  downvotes Int      @default(0)
+  createdAt DateTime @default(now())
+
+  thread   Thread  @relation(fields: [threadId], references: [id])
+  author   User    @relation(fields: [authorId], references: [id])
+  parent   Reply?  @relation("ReplyTree", fields: [parentId], references: [id])
+  children Reply[] @relation("ReplyTree")
+
+  @@map("replies")
+}
+
+model Vote {
+  id          String   @id @default(uuid())
+  userId      String
+  contentType String   // THREAD, REPLY
+  contentId   String
+  type        VoteType
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, contentType, contentId])
+  @@map("votes")
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("UserFollows", fields: [followerId], references: [id])
+  following User @relation("UserFollowers", fields: [followingId], references: [id])
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model Block {
+  blockerId String
+  blockedId String
+
+  @@id([blockerId, blockedId])
+  @@map("blocks")
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  content    String   // Encrypted in app layer
+  isRead     Boolean  @default(false)
+  sentAt     DateTime @default(now())
+
+  sender   User @relation("Sent", fields: [senderId], references: [id])
+  receiver User @relation("Received", fields: [receiverId], references: [id])
+
+  @@map("messages")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // LIKE, COMMENT, FOLLOW, MESSAGE
+  refId     String   // blogId, threadId, etc.
+  actorId   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Report {
+  id          String       @id @default(uuid())
+  reporterId  String
+  contentType String       // BLOG, THREAD, COMMENT
+  contentId   String
+  reason      String
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+
+  reporter User @relation(fields: [reporterId], references: [id])
+
+  @@map("reports")
+}
+
+model ContentFlag {
+  contentId   String
+  contentType String
+  toxicity    Float
+  spamScore   Float
+  flaggedAt   DateTime @default(now())
+
+  @@id([contentId, contentType])
+  @@map("content_flags")
+}
+
+enum VoteType {
+  UP
+  DOWN
+}
+
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+  BANNED
+}
